@@ -1,0 +1,21 @@
+.flag-field {
+  width: 600px;
+  display: flex;
+  justify-content: space-between;
+  font-family: "JetBrains Mono", monospace;
+  border-top: 1px solid grey;
+  border-bottom: 1px solid grey;
+  margin: 4px 0;
+
+}
+
+input.boolean-value {
+    font-family: "JetBrains Mono", monospace;
+    color: grey;
+    &[value="false"] {
+      color: red;
+    }
+    &[value="true"] {
+      color: green;
+    }
+  }
