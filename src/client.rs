@@ -1,6 +1,7 @@
-use feature_flags::Flag;
 use leptos::ev::Event;
 use leptos::*;
+
+use crate::shared::Flag;
 
 fn maybe_bool_to_str(value: Option<bool>) -> &'static str {
     match value {
@@ -64,41 +65,33 @@ where
 #[component]
 pub fn App(cx: Scope) -> impl IntoView {
     let (flags, set_flags) = create_signal(cx, Vec::<Flag>::new());
+    match ureq::get("http://localhost:8080/flags/").call() {
+        Ok(response) => set_flags(response.into_json::<Vec<Flag>>().unwrap()),
+        Err(error) => error!("error getting flags: {error}"),
+    }
 
-    let flag_views = ["links_enabled", "tts_enabled"].map(|key| {
-        let set_value = move |value| {
-            log!(
-                "key {key} set to {value}",
-                value = match value {
-                    true => "enabled",
-                    false => "disabled",
-                }
-            )
-        };
-        view! {
-            cx,
-            <BooleanFlagField
-                key=key.to_string()
-                initial_value=false
-                set_value=set_value
-            />
-        }
+    let flag_views = create_memo(cx, move |_| {
+        flags()
+            .into_iter()
+            .map(|Flag { name, enabled }| {
+                let set_value = move |value| {};
+                (view! {
+                    cx,
+                    <BooleanFlagField
+                        key=name
+                        initial_value=false
+                        set_value=set_value
+                    />
+                })
+                .into_view(cx)
+            })
+            .collect::<Vec<_>>()
     });
     view! {
         cx,
         <div>
             <h2>"Feature Flags"</h2>
-            {flag_views.map(|v| v.into_view(cx))}
+            {flag_views()}
         </div>
     }
-}
-
-// Easy to use with Trunk (trunkrs.dev) or with a simple wasm-bindgen setup
-pub fn main() {
-    mount_to_body(|cx| {
-        view! {
-            cx,
-            <App />
-        }
-    })
 }

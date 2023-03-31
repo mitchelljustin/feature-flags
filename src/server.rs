@@ -1,17 +1,27 @@
 use std::fmt::{Display, Formatter};
 
 use actix_web::http::StatusCode;
+use actix_web::middleware::Logger;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, ResponseError};
+use log::LevelFilter;
 use redis::{Commands, RedisError};
 
-use crate::Flag;
+use crate::shared::Flag;
+
+type Result<T = HttpResponse, E = Error> = std::result::Result<T, E>;
 
 pub async fn run() -> std::io::Result<()> {
-    let make_app = || App::new().service(web::scope("/flags").service(get_flags).service(set_flag));
-    HttpServer::new(make_app)
-        .bind(("127.0.0.1", 8080))?
-        .run()
-        .await
+    env_logger::builder()
+        .filter_level(LevelFilter::Debug)
+        .init();
+    HttpServer::new(|| {
+        App::new()
+            .wrap(Logger::default())
+            .service(web::scope("/flags").service(get_flags).service(set_flag))
+    })
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
 }
 
 #[derive(Debug)]
@@ -44,8 +54,6 @@ impl From<RedisError> for Error {
 fn redis_connection() -> Result<redis::Connection, RedisError> {
     redis::Client::open("redis://127.0.0.1/")?.get_connection()
 }
-
-type Result<T = HttpResponse, E = Error> = std::result::Result<T, E>;
 
 #[post("/")]
 async fn set_flag(info: web::Json<Flag>) -> Result {

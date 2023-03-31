@@ -8,11 +8,13 @@ edition = "2021"
 
 [dependencies]
 serde = { version = '1.0.154', features = ["derive"] }
-ureq = "2.6.2"
-
-[target.'cfg(target_family = "wasm")'.dependencies]
+ureq = { version = "2.6.2", features = ["json"] }
 leptos = '0.2.1'
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
+env_logger = "0.10.0"
+log = "0.4.17"
 redis = '0.22.3'
 actix-web = '4.3.1'
