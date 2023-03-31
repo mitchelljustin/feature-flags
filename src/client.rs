@@ -79,7 +79,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                     cx,
                     <BooleanFlagField
                         key=name
-                        initial_value=false
+                        initial_value=enabled
                         set_value=set_value
                     />
                 })
