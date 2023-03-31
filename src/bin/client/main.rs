@@ -1,5 +1,22 @@
-use leptos::*;
+use feature_flags::Flag;
 use leptos::ev::Event;
+use leptos::*;
+
+fn maybe_bool_to_str(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "",
+    }
+}
+
+fn str_to_maybe_bool(value: &str) -> Option<bool> {
+    match value {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
 
 #[component]
 pub fn BooleanFlagField<T>(
@@ -8,22 +25,14 @@ pub fn BooleanFlagField<T>(
     initial_value: bool,
     set_value: T,
 ) -> impl IntoView
-    where T: FnMut(bool) + 'static {
+where
+    T: FnMut(bool) + 'static,
+{
     let mut set_value = set_value;
 
-    let maybe_bool_to_str = |value: Option<bool>| match value {
-        Some(true) => "true",
-        Some(false) => "false",
-        None => "",
-    };
-
-    let str_to_maybe_bool = |value: &str| match value {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None
-    };
     // create a reactive signal with the initial value
-    let (str_value, set_str_value) = create_signal(cx, maybe_bool_to_str(Some(initial_value)).to_string());
+    let (str_value, set_str_value) =
+        create_signal(cx, maybe_bool_to_str(Some(initial_value)).to_string());
 
     // create event handlers for our buttons
     // note that `value` and `set_value` are `Copy`, so it's super easy to move them into closures
@@ -53,27 +62,28 @@ pub fn BooleanFlagField<T>(
 }
 
 #[component]
-pub fn App(
-    cx: Scope,
-) -> impl IntoView {
-    let flag_views = ["links_enabled", "tts_enabled"]
-        .map(|key| {
-            let key_string = key.to_string();
-            let set_value = move |value|
-                log!("key {key_string} set to {value}",
-                    value=match value {
-                        true => "enabled",
-                        false => "disabled",
-                    });
-            view! {
-                cx,
-                <BooleanFlagField
-                    key=key.to_string()
-                    initial_value=false
-                    set_value=set_value
-                />
-            }
-        });
+pub fn App(cx: Scope) -> impl IntoView {
+    let (flags, set_flags) = create_signal(cx, Vec::<Flag>::new());
+
+    let flag_views = ["links_enabled", "tts_enabled"].map(|key| {
+        let set_value = move |value| {
+            log!(
+                "key {key} set to {value}",
+                value = match value {
+                    true => "enabled",
+                    false => "disabled",
+                }
+            )
+        };
+        view! {
+            cx,
+            <BooleanFlagField
+                key=key.to_string()
+                initial_value=false
+                set_value=set_value
+            />
+        }
+    });
     view! {
         cx,
         <div>
@@ -85,8 +95,10 @@ pub fn App(
 
 // Easy to use with Trunk (trunkrs.dev) or with a simple wasm-bindgen setup
 pub fn main() {
-    mount_to_body(|cx| view! {
-        cx,
-        <App />
+    mount_to_body(|cx| {
+        view! {
+            cx,
+            <App />
+        }
     })
 }
