@@ -5,9 +5,11 @@ async fn main() -> std::io::Result<()> {
 }
 
 #[cfg(target_family = "wasm")]
-pub fn main() {
+fn main() {
     use feature_flags::client::{App, AppProps};
-    use leptos::{mount_to_body, view};
+    use leptos::*;
+
+    // Easy to use with Trunk (trunkrs.dev) or with a simple wasm-bindgen setup
     mount_to_body(|cx| {
         view! {
             cx,
