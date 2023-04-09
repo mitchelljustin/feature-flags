@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::str::FromStr;
 
 use leptos::*;
 use reqwasm::http::Response;
@@ -10,35 +9,27 @@ use wasm_bindgen::UnwrapThrowExt;
 
 use crate::shared::{Flag, FlagValue};
 
-fn maybe_bool_to_str(value: Option<bool>) -> &'static str {
-    match value {
-        Some(true) => "true",
-        Some(false) => "false",
-        None => "",
-    }
-}
-
-fn str_to_maybe_bool(value: &str) -> Option<bool> {
-    match value {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
 #[component]
-pub fn FlagField<V>(cx: Scope, name: String, init_value: V) -> impl IntoView
+pub fn FlagField(cx: Scope, name: String, init_value: String) -> impl IntoView
 where
-    V: FlagValue + FromStr,
 {
     let (name, set_name) = create_signal(cx, name);
-    let (value, set_value) = create_signal(cx, init_value.to_string());
-    let write_flag_to_server = create_action(cx, move |flag: &Flag<V>| {
+    let (value, set_value) = create_signal(cx, init_value);
+    let write_flag_to_server = create_action(cx, |flag: &Flag| {
         post_json("http://localhost:8080/flags/", flag.clone())
     });
     let save_flag = move || {
-        let Ok(value) = V::from_str(&value()) else {
-            return;
+        let value = match value().as_str() {
+            "true" => FlagValue::Boolean(true),
+            "false" => FlagValue::Boolean(false),
+            "null" | "" => FlagValue::Null,
+            number_or_string => {
+                if let Ok(number) = number_or_string.parse() {
+                    FlagValue::Number(number)
+                } else {
+                    FlagValue::String(number_or_string.to_string())
+                }
+            }
         };
         write_flag_to_server.dispatch(Flag {
             name: name(),
@@ -73,7 +64,7 @@ fn post_json(
     url: &str,
     data: impl Serialize + DeserializeOwned,
 ) -> impl Future<Output = Result<Response, Error>> {
-    let body = data.ser().unwrap();
+    let body = data.ser().expect("serialization to succeed");
     log!("posting to '{url}': '{body}'");
     reqwasm::http::Request::post(url)
         .body(body)
@@ -81,7 +72,7 @@ fn post_json(
         .send()
 }
 
-pub async fn fetch_flags(_: i32) -> Vec<Flag<bool>> {
+pub async fn fetch_flags(_: i32) -> Vec<Flag> {
     reqwasm::http::Request::get("http://localhost:8080/flags/")
         .send()
         .await
@@ -94,8 +85,8 @@ pub async fn fetch_flags(_: i32) -> Vec<Flag<bool>> {
 #[component]
 pub fn App(cx: Scope) -> impl IntoView {
     let (fetches, set_fetches) = create_signal(cx, 0);
-    let flags_from_server: Resource<_, Vec<Flag<bool>>> = create_resource(cx, fetches, fetch_flags);
-    let (local_flags, set_local_flags) = create_signal(cx, Vec::<Flag<bool>>::new());
+    let flags_from_server = create_resource(cx, fetches, fetch_flags);
+    let (local_flags, set_local_flags) = create_signal(cx, Vec::<Flag>::new());
     let flags = create_memo(cx, move |_| {
         flags_from_server.with(cx, |flags_from_server| {
             let mut flags = flags_from_server.clone();
@@ -115,7 +106,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                         cx,
                         <FlagField
                             name=name
-                            init_value=value
+                            init_value=value.to_string()
                         />
                     }
                 })

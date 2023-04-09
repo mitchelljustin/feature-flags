@@ -1,10 +1,11 @@
 use std::fmt::{Display, Formatter};
 
-use actix_web::{
-    App, dev::Service as _, get, HttpResponse, HttpServer, options, post, ResponseError, web,
-};
+use actix_web::http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use actix_web::http::{header, StatusCode};
-use actix_web::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue};
+use actix_web::middleware::Logger;
+use actix_web::{
+    dev::Service as _, get, options, post, web, App, HttpResponse, HttpServer, ResponseError,
+};
 use futures_util::future::FutureExt;
 use log::LevelFilter;
 use redis::{Commands, RedisError};
@@ -17,6 +18,7 @@ pub async fn run() -> std::io::Result<()> {
         .init();
     let make_app = || {
         App::new()
+            .wrap(Logger::default())
             .wrap_fn(|req, srv| {
                 srv.call(req).map(|res| {
                     res.map(|mut res| {
@@ -44,12 +46,14 @@ pub async fn run() -> std::io::Result<()> {
 #[derive(Debug)]
 enum Error {
     Redis(RedisError),
+    Internal(String),
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Redis(err) => write!(f, "redis error: {err}"),
+            Error::Internal(err) => write!(f, "internal error: {err}"),
         }
     }
 }
@@ -57,7 +61,7 @@ impl Display for Error {
 impl ResponseError for Error {
     fn status_code(&self) -> StatusCode {
         match self {
-            Error::Redis(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::Redis(_) | Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -74,9 +78,8 @@ fn redis_connection() -> Result<redis::Connection, RedisError> {
 
 type Result<T = HttpResponse, E = Error> = std::result::Result<T, E>;
 
-async fn save_flag<V>(Flag { value, name }: Flag<V>) -> Result<(), Error>
+async fn save_flag(Flag { value, name }: Flag) -> Result<(), Error>
 where
-    V: FlagValue,
 {
     let mut conn = redis_connection()?;
     let key = format!("flags:{name}");
@@ -85,7 +88,7 @@ where
 }
 
 #[post("/")]
-async fn post_flags(web::Json(flag): web::Json<Flag<bool>>) -> Result {
+async fn post_flags(web::Json(flag): web::Json<Flag>) -> Result {
     save_flag(flag).await?;
     Ok(HttpResponse::Ok().finish())
 }
@@ -96,10 +99,15 @@ async fn get_flags() -> Result {
     let keys: Vec<String> = conn.keys("flags:*")?;
     let flag_map = keys
         .iter()
-        .map(|key| {
-            conn.get(key).map(|value: bool| Flag {
+        .map(|key| -> Result<Flag> {
+            let value: String = conn.get(key)?;
+            let flag_value: FlagValue = value
+                .as_str()
+                .try_into()
+                .map_err(|msg: &'static str| Error::Internal(format!("key '{key}': {msg}")))?;
+            Ok(Flag {
                 name: key[6..].to_string(),
-                value,
+                value: flag_value,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
