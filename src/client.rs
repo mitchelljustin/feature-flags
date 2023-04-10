@@ -10,14 +10,14 @@ use wasm_bindgen::UnwrapThrowExt;
 use crate::shared::{Flag, FlagValue};
 
 #[component]
-pub fn FlagField(cx: Scope, name: String, init_value: String) -> impl IntoView
-where
-{
+pub fn FlagField(
+    cx: Scope,
+    name: String,
+    init_value: String,
+    save_flag_action: Action<Flag, Result<(), Error>>,
+) -> impl IntoView {
     let (name, set_name) = create_signal(cx, name);
     let (value, set_value) = create_signal(cx, init_value);
-    let write_flag_to_server = create_action(cx, |flag: &Flag| {
-        post_json("http://localhost:8080/flags/", flag.clone())
-    });
     let save_flag = move || {
         let value = match value().as_str() {
             "true" => FlagValue::Boolean(true),
@@ -31,7 +31,7 @@ where
                 }
             }
         };
-        write_flag_to_server.dispatch(Flag {
+        save_flag_action.dispatch(Flag {
             name: name(),
             value,
         });
@@ -53,6 +53,7 @@ where
         <div class="flag-field">
             <input
                 type="text"
+                placeholder="name"
                 value={name}
                 prop:value={name}
                 on:input=move |event| set_name(event_target_value(&event))
@@ -85,25 +86,34 @@ fn post_json(
         .send()
 }
 
-pub async fn fetch_flags(_: i32) -> Vec<Flag> {
-    reqwasm::http::Request::get("http://localhost:8080/flags/")
-        .send()
-        .await
-        .expect_throw("could not fetch from server")
-        .json()
-        .await
-        .expect_throw("could not parse from json")
+pub async fn fetch_flags((): ()) -> Vec<Flag> {
+    let mut flags: Vec<Flag> =
+        reqwasm::http::Request::get("http://localhost:8080/flags/")
+            .send()
+            .await
+            .expect_throw("could not fetch from server")
+            .json()
+            .await
+            .expect_throw("could not parse from json");
+    flags.sort();
+    flags
 }
 
 #[component]
 pub fn App(cx: Scope) -> impl IntoView {
-    let (fetches, set_fetches) = create_signal(cx, 0);
-    let flags_from_server = create_resource(cx, fetches, fetch_flags);
+    let flags_from_server = create_resource(cx, || (), fetch_flags);
     let (new_flag, set_new_flag) = create_signal(cx, false);
 
     create_effect(cx, move |_| {
         flags_from_server.with(cx, |flags| log!("flags={:#?}", flags))
     });
+    let save_flag = async move |flag| {
+        post_json("http://localhost:8080/flags/", flag).await?;
+        flags_from_server.refetch();
+        Ok(())
+    };
+    let save_flag_action =
+        create_action(cx, move |flag: &Flag| save_flag(flag.clone()));
 
     let flag_views = move || {
         flags_from_server.with(cx, |flags| {
@@ -116,6 +126,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                         <FlagField
                             name=name
                             init_value=value.to_string()
+                            save_flag_action=save_flag_action
                         />
                     }
                 })
@@ -127,7 +138,7 @@ pub fn App(cx: Scope) -> impl IntoView {
         <div>
             <h2>"Feature Flags"</h2>
             <div>
-                <button on:click=move |_| set_fetches(fetches().wrapping_add(1))>
+                <button on:click=move |_| flags_from_server.refetch()>
                     "Fetch"
                 </button>
                 <button on:click=move |_| set_new_flag(true)>
@@ -140,7 +151,8 @@ pub fn App(cx: Scope) -> impl IntoView {
                 cx,
                 <FlagField
                     name=String::new()
-                    init_value="null".to_string()
+                    init_value=FlagValue::Null.to_string()
+                    save_flag_action=save_flag_action
                 />
             })}
         </div>

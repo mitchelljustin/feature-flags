@@ -1,9 +1,13 @@
 use std::fmt::{Display, Formatter};
 
-use actix_web::http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
+use actix_web::http::header::{
+    HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN,
+};
 use actix_web::http::StatusCode;
 use actix_web::middleware::Logger;
-use actix_web::{dev::Service as _, App, HttpResponse, HttpServer, ResponseError};
+use actix_web::{
+    dev::Service as _, App, HttpResponse, HttpServer, ResponseError,
+};
 use futures_util::future::FutureExt;
 use log::LevelFilter;
 use redis::{Commands, RedisError};
@@ -48,7 +52,9 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Redis(err) => write!(f, "redis error: {err}"),
-            Error::Internal(err) => write!(f, "internal error: {err}"),
+            Error::Internal(err) => {
+                write!(f, "internal error: {err}")
+            }
         }
     }
 }
@@ -56,7 +62,9 @@ impl Display for Error {
 impl ResponseError for Error {
     fn status_code(&self) -> StatusCode {
         match self {
-            Error::Redis(_) | Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::Redis(_) | Error::Internal(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
     }
 }
@@ -116,7 +124,9 @@ mod flags {
                     .get::<_, String>(key)?
                     .as_str()
                     .try_into()
-                    .map_err(|msg| decode_flag_value_error(key, msg))?;
+                    .map_err(|msg| {
+                        decode_flag_value_error(key, msg)
+                    })?;
                 Ok(Flag {
                     name: key[6..].to_string(),
                     value,
@@ -137,7 +147,9 @@ mod flags {
                 let value = value_string
                     .as_str()
                     .try_into()
-                    .map_err(|msg| decode_flag_value_error(&name, msg))?;
+                    .map_err(|msg| {
+                        decode_flag_value_error(&name, msg)
+                    })?;
                 HttpResponse::Ok().json(Flag { name, value })
             }
         })
@@ -146,7 +158,10 @@ mod flags {
     #[options("/")]
     async fn options() -> Result {
         Ok(HttpResponse::Ok()
-            .insert_header((header::ACCESS_CONTROL_ALLOW_HEADERS, "content-type"))
+            .insert_header((
+                header::ACCESS_CONTROL_ALLOW_HEADERS,
+                "content-type",
+            ))
             .finish())
     }
 }

@@ -1,10 +1,11 @@
+use std::cmp::Ordering;
 use std::fmt::Formatter;
 
 use redis::{NumericBehavior, RedisWrite, ToRedisArgs};
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, PartialOrd)]
 pub enum FlagValue {
     #[default]
     Null,
@@ -12,6 +13,7 @@ pub enum FlagValue {
     String(String),
     Number(f64),
 }
+impl Eq for FlagValue {} // technically illegal lol
 
 impl Serialize for FlagValue {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -95,9 +97,15 @@ impl ToRedisArgs for FlagValue {
     {
         match self {
             FlagValue::Null => out.write_arg(b"null:null"),
-            FlagValue::Boolean(value) => out.write_arg_fmt(format_args!("boolean:{value}")),
-            FlagValue::String(value) => out.write_arg_fmt(format_args!("string:{value}")),
-            FlagValue::Number(value) => out.write_arg_fmt(format_args!("number:{value}")),
+            FlagValue::Boolean(value) => {
+                out.write_arg_fmt(format_args!("boolean:{value}"))
+            }
+            FlagValue::String(value) => {
+                out.write_arg_fmt(format_args!("string:{value}"))
+            }
+            FlagValue::Number(value) => {
+                out.write_arg_fmt(format_args!("number:{value}"))
+            }
         }
     }
 
@@ -138,15 +146,31 @@ impl TryFrom<&str> for FlagValue {
                 _ => return Err("invalid boolean value"),
             }),
             "string" => FlagValue::String(value.to_string()),
-            "number" => FlagValue::Number(value.parse().map_err(|_| "invalid number")?),
+            "number" => FlagValue::Number(
+                value
+                    .parse()
+                    .map_err(|_| "invalid number")?,
+            ),
             _ => return Err("unrecognized type"),
         };
         Ok(flag_value)
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default, Eq)]
 pub struct Flag {
-    pub name: String,
+    pub name:  String,
     pub value: FlagValue,
+}
+
+impl PartialOrd for Flag {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.name.partial_cmp(&other.name)
+    }
+}
+
+impl Ord for Flag {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
 }
