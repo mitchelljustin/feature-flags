@@ -99,18 +99,14 @@ pub async fn fetch_flags(_: i32) -> Vec<Flag> {
 pub fn App(cx: Scope) -> impl IntoView {
     let (fetches, set_fetches) = create_signal(cx, 0);
     let flags_from_server = create_resource(cx, fetches, fetch_flags);
-    let (local_flags, set_local_flags) = create_signal(cx, Vec::<Flag>::new());
-    let flags = create_memo(cx, move |_| {
-        flags_from_server.with(cx, |flags_from_server| {
-            let mut flags = flags_from_server.clone();
-            flags.extend(local_flags());
-            flags
-        })
+    let (new_flag, set_new_flag) = create_signal(cx, false);
+
+    create_effect(cx, move |_| {
+        flags_from_server.with(cx, |flags| log!("flags={:#?}", flags))
     });
-    create_effect(cx, move |_| log!("flags={:#?}", flags()));
 
     let flag_views = move || {
-        flags().map(|flags| {
+        flags_from_server.with(cx, |flags| {
             flags
                 .iter()
                 .cloned()
@@ -131,19 +127,22 @@ pub fn App(cx: Scope) -> impl IntoView {
         <div>
             <h2>"Feature Flags"</h2>
             <div>
-            <button on:click=move |_| set_fetches(fetches().wrapping_add(1))>
-                "Fetch"
-            </button>
-            <button on:click=move |_| {
-                let mut local_flags = local_flags();
-                local_flags.push(Default::default());
-                set_local_flags(local_flags);
-            }>
-                "Add Flag"
-            </button>
+                <button on:click=move |_| set_fetches(fetches().wrapping_add(1))>
+                    "Fetch"
+                </button>
+                <button on:click=move |_| set_new_flag(true)>
+                    "Add Flag"
+                </button>
             </div>
 
             {flag_views}
+            {move || new_flag().then_some(view! {
+                cx,
+                <FlagField
+                    name=String::new()
+                    init_value="null".to_string()
+                />
+            })}
         </div>
     }
 }

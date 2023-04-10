@@ -1,16 +1,16 @@
 use std::fmt::{Display, Formatter};
 
 use actix_web::http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
-use actix_web::http::{header, StatusCode};
+use actix_web::http::StatusCode;
 use actix_web::middleware::Logger;
-use actix_web::{
-    dev::Service as _, get, options, post, web, App, HttpResponse, HttpServer, ResponseError,
-};
+use actix_web::{dev::Service as _, App, HttpResponse, HttpServer, ResponseError};
 use futures_util::future::FutureExt;
 use log::LevelFilter;
 use redis::{Commands, RedisError};
 
 use crate::shared::Flag;
+
+type Result<T = HttpResponse, E = Error> = std::result::Result<T, E>;
 
 pub async fn run() -> std::io::Result<()> {
     env_logger::builder()
@@ -30,12 +30,7 @@ pub async fn run() -> std::io::Result<()> {
                     })
                 })
             })
-            .service(
-                web::scope("/flags")
-                    .service(get_flags)
-                    .service(post_flags)
-                    .service(flag_options),
-            )
+            .service(flags::service())
     };
     HttpServer::new(make_app)
         .bind(("127.0.0.1", 8080))?
@@ -76,47 +71,82 @@ fn redis_connection() -> Result<redis::Connection, RedisError> {
     redis::Client::open("redis://127.0.0.1/")?.get_connection()
 }
 
-type Result<T = HttpResponse, E = Error> = std::result::Result<T, E>;
-
-async fn save_flag(Flag { value, name }: Flag) -> Result<(), Error>
-where
-{
+async fn save_flag(Flag { value, name }: Flag) -> Result<(), Error> {
     let mut conn = redis_connection()?;
     let key = format!("flags:{name}");
     conn.set(key, value)?;
     Ok(())
 }
 
-#[post("/")]
-async fn post_flags(web::Json(flag): web::Json<Flag>) -> Result {
-    save_flag(flag).await?;
-    Ok(HttpResponse::Ok().finish())
-}
+mod flags {
+    use actix_web::dev::HttpServiceFactory;
+    use actix_web::http::header;
+    use actix_web::{get, options, post, web, HttpResponse};
+    use redis::Commands;
 
-#[get("/")]
-async fn get_flags() -> Result {
-    let mut conn = redis_connection()?;
-    let keys: Vec<String> = conn.keys("flags:*")?;
-    let flag_map = keys
-        .iter()
-        .map(|key| -> Result<Flag> {
-            let value = conn
-                .get::<_, String>(key)?
-                .as_str()
-                .try_into()
-                .map_err(|msg| Error::Internal(format!("key '{key}': {msg}")))?;
-            Ok(Flag {
-                name: key[6..].to_string(),
-                value,
+    use crate::server::{redis_connection, save_flag, Error, Result};
+    use crate::shared::Flag;
+
+    fn decode_flag_value_error(name: &str, msg: &str) -> Error {
+        Error::Internal(format!("flag '{name}': {msg}"))
+    }
+
+    pub fn service() -> impl HttpServiceFactory + 'static {
+        web::scope("/flags")
+            .service(post)
+            .service(get_all)
+            .service(get)
+            .service(options)
+    }
+
+    #[post("/")]
+    async fn post(web::Json(flag): web::Json<Flag>) -> Result {
+        save_flag(flag).await?;
+        Ok(HttpResponse::Ok().finish())
+    }
+
+    #[get("/")]
+    async fn get_all() -> Result {
+        let mut conn = redis_connection()?;
+        let keys: Vec<String> = conn.keys("flags:*")?;
+        let flag_map = keys
+            .iter()
+            .map(|key| -> Result<Flag> {
+                let value = conn
+                    .get::<_, String>(key)?
+                    .as_str()
+                    .try_into()
+                    .map_err(|msg| decode_flag_value_error(key, msg))?;
+                Ok(Flag {
+                    name: key[6..].to_string(),
+                    value,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(HttpResponse::Ok().json(flag_map))
-}
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(HttpResponse::Ok().json(flag_map))
+    }
 
-#[options("/")]
-async fn flag_options() -> Result {
-    Ok(HttpResponse::Ok()
-        .insert_header((header::ACCESS_CONTROL_ALLOW_HEADERS, "content-type"))
-        .finish())
+    #[get("/{name}")]
+    async fn get(path: web::Path<(String,)>) -> Result {
+        let (name,) = path.into_inner();
+        let key = format!("flags:{name}");
+        let mut conn = redis_connection()?;
+        Ok(match conn.get::<_, Option<String>>(&key)? {
+            None => HttpResponse::NotFound().finish(),
+            Some(value_string) => {
+                let value = value_string
+                    .as_str()
+                    .try_into()
+                    .map_err(|msg| decode_flag_value_error(&name, msg))?;
+                HttpResponse::Ok().json(Flag { name, value })
+            }
+        })
+    }
+
+    #[options("/")]
+    async fn options() -> Result {
+        Ok(HttpResponse::Ok()
+            .insert_header((header::ACCESS_CONTROL_ALLOW_HEADERS, "content-type"))
+            .finish())
+    }
 }
