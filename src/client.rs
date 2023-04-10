@@ -36,6 +36,17 @@ where
             value,
         });
     };
+    let class = create_memo(cx, move |_| {
+        [
+            "flag-value",
+            if value().parse::<f64>().is_ok() {
+                "number"
+            } else {
+                ""
+            },
+        ]
+        .join(" ")
+    });
 
     view! {
         cx,
@@ -48,7 +59,7 @@ where
                 />
             <input
                 type="text"
-                class="flag-value"
+                class={class}
                 value={value}
                 prop:value={value}
                 on:input=move |event| set_value(event_target_value(&event))
@@ -64,7 +75,9 @@ fn post_json(
     url: &str,
     data: impl Serialize + DeserializeOwned,
 ) -> impl Future<Output = Result<Response, Error>> {
-    let body = data.ser().expect("serialization to succeed");
+    let body = data
+        .ser()
+        .expect("serialization to succeed");
     log!("posting to '{url}': '{body}'");
     reqwasm::http::Request::post(url)
         .body(body)

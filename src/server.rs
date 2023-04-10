@@ -10,7 +10,7 @@ use futures_util::future::FutureExt;
 use log::LevelFilter;
 use redis::{Commands, RedisError};
 
-use crate::shared::{Flag, FlagValue};
+use crate::shared::Flag;
 
 pub async fn run() -> std::io::Result<()> {
     env_logger::builder()
@@ -100,14 +100,14 @@ async fn get_flags() -> Result {
     let flag_map = keys
         .iter()
         .map(|key| -> Result<Flag> {
-            let value: String = conn.get(key)?;
-            let flag_value: FlagValue = value
+            let value = conn
+                .get::<_, String>(key)?
                 .as_str()
                 .try_into()
-                .map_err(|msg: &'static str| Error::Internal(format!("key '{key}': {msg}")))?;
+                .map_err(|msg| Error::Internal(format!("key '{key}': {msg}")))?;
             Ok(Flag {
                 name: key[6..].to_string(),
-                value: flag_value,
+                value,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

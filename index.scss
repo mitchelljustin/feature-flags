@@ -11,11 +11,17 @@
 
 input.flag-value {
     font-family: "JetBrains Mono", monospace;
-    color: grey;
+    color: black;
     &[value="false"] {
       color: red;
     }
     &[value="true"] {
       color: green;
+    }
+    &[value="null"] {
+      font-weight: bold;
+    }
+    &.number {
+      font-style: italic;
     }
   }
