@@ -18,7 +18,7 @@ pub fn FlagField(
 ) -> impl IntoView {
     let (name, set_name) = create_signal(cx, name);
     let (value, set_value) = create_signal(cx, init_value);
-    let save_flag = move || {
+    let save_flag = move |_| {
         let value = match value().as_str() {
             "true" => FlagValue::Boolean(true),
             "false" => FlagValue::Boolean(false),
@@ -57,15 +57,15 @@ pub fn FlagField(
                 value={name}
                 prop:value={name}
                 on:input=move |event| set_name(event_target_value(&event))
-                />
+            />
             <input
                 type="text"
                 class={class}
                 value={value}
                 prop:value={value}
                 on:input=move |event| set_value(event_target_value(&event))
-                />
-            <button on:click=move |_| save_flag()>
+            />
+            <button on:click=save_flag>
                 "Save"
             </button>
         </div>
@@ -101,22 +101,22 @@ pub async fn fetch_flags((): ()) -> Vec<Flag> {
 
 #[component]
 pub fn App(cx: Scope) -> impl IntoView {
-    let flags_from_server = create_resource(cx, || (), fetch_flags);
+    let flags = create_resource(cx, || (), fetch_flags);
     let (new_flag, set_new_flag) = create_signal(cx, false);
 
     create_effect(cx, move |_| {
-        flags_from_server.with(cx, |flags| log!("flags={:#?}", flags))
+        flags.with(cx, |flags| log!("flags={:#?}", flags))
     });
     let save_flag = async move |flag| {
         post_json("http://localhost:8080/flags/", flag).await?;
-        flags_from_server.refetch();
+        flags.refetch();
         Ok(())
     };
     let save_flag_action =
         create_action(cx, move |flag: &Flag| save_flag(flag.clone()));
 
     let flag_views = move || {
-        flags_from_server.with(cx, |flags| {
+        flags.with(cx, |flags| {
             flags
                 .iter()
                 .cloned()
@@ -138,8 +138,8 @@ pub fn App(cx: Scope) -> impl IntoView {
         <div>
             <h2>"Feature Flags"</h2>
             <div>
-                <button on:click=move |_| flags_from_server.refetch()>
-                    "Fetch"
+                <button on:click=move |_| flags.refetch()>
+                    {move || if flags.loading()() { "Fetching" } else { "Fetch" }}
                 </button>
                 <button on:click=move |_| set_new_flag(true)>
                     "Add Flag"

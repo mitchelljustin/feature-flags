@@ -1,8 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use actix_web::http::header::{
-    HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN,
-};
+use actix_web::http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use actix_web::http::StatusCode;
 use actix_web::middleware::Logger;
 use actix_web::{
@@ -87,15 +85,18 @@ async fn save_flag(Flag { value, name }: Flag) -> Result<(), Error> {
 }
 
 mod flags {
+    use std::time::Duration;
+
     use actix_web::dev::HttpServiceFactory;
     use actix_web::http::header;
+    use actix_web::rt::time;
     use actix_web::{get, options, post, web, HttpResponse};
     use redis::Commands;
 
     use crate::server::{redis_connection, save_flag, Error, Result};
     use crate::shared::Flag;
 
-    fn decode_flag_value_error(name: &str, msg: &str) -> Error {
+    fn decode_value_error(name: &str, msg: &str) -> Error {
         Error::Internal(format!("flag '{name}': {msg}"))
     }
 
@@ -115,6 +116,7 @@ mod flags {
 
     #[get("/")]
     async fn get_all() -> Result {
+        time::sleep(Duration::from_secs(1)).await;
         let mut conn = redis_connection()?;
         let keys: Vec<String> = conn.keys("flags:*")?;
         let flag_map = keys
@@ -124,9 +126,7 @@ mod flags {
                     .get::<_, String>(key)?
                     .as_str()
                     .try_into()
-                    .map_err(|msg| {
-                        decode_flag_value_error(key, msg)
-                    })?;
+                    .map_err(|msg| decode_value_error(key, msg))?;
                 Ok(Flag {
                     name: key[6..].to_string(),
                     value,
@@ -147,9 +147,7 @@ mod flags {
                 let value = value_string
                     .as_str()
                     .try_into()
-                    .map_err(|msg| {
-                        decode_flag_value_error(&name, msg)
-                    })?;
+                    .map_err(|msg| decode_value_error(&name, msg))?;
                 HttpResponse::Ok().json(Flag { name, value })
             }
         })
