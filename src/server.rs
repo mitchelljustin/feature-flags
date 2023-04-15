@@ -44,6 +44,7 @@ pub async fn run() -> std::io::Result<()> {
 enum Error {
     Redis(RedisError),
     Internal(String),
+    NotFound(String),
 }
 
 impl Display for Error {
@@ -52,6 +53,9 @@ impl Display for Error {
             Error::Redis(err) => write!(f, "redis error: {err}"),
             Error::Internal(err) => {
                 write!(f, "internal error: {err}")
+            }
+            Error::NotFound(item) => {
+                write!(f, "not found: '{item}'")
             }
         }
     }
@@ -63,6 +67,7 @@ impl ResponseError for Error {
             Error::Redis(_) | Error::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+            Error::NotFound(_) => StatusCode::NOT_FOUND,
         }
     }
 }
@@ -85,14 +90,12 @@ async fn save_flag(Flag { value, name }: Flag) -> Result<(), Error> {
 }
 
 mod flags {
-    use std::time::Duration;
-
     use actix_web::dev::HttpServiceFactory;
     use actix_web::http::header;
-    use actix_web::rt::time;
     use actix_web::{get, options, post, web, HttpResponse};
     use redis::Commands;
 
+    use crate::server::Error::NotFound;
     use crate::server::{redis_connection, save_flag, Error, Result};
     use crate::shared::Flag;
 
@@ -116,7 +119,6 @@ mod flags {
 
     #[get("/")]
     async fn get_all() -> Result {
-        time::sleep(Duration::from_secs(1)).await;
         let mut conn = redis_connection()?;
         let keys: Vec<String> = conn.keys("flags:*")?;
         let flag_map = keys
@@ -140,17 +142,13 @@ mod flags {
     async fn get(path: web::Path<(String,)>) -> Result {
         let (name,) = path.into_inner();
         let key = format!("flags:{name}");
-        let mut conn = redis_connection()?;
-        Ok(match conn.get::<_, Option<String>>(&key)? {
-            None => HttpResponse::NotFound().finish(),
-            Some(value_string) => {
-                let value = value_string
-                    .as_str()
-                    .try_into()
-                    .map_err(|msg| decode_value_error(&name, msg))?;
-                HttpResponse::Ok().json(Flag { name, value })
-            }
-        })
+        let value = redis_connection()?
+            .get::<_, Option<String>>(&key)?
+            .ok_or(NotFound(key))?
+            .as_str()
+            .try_into()
+            .map_err(|msg| decode_value_error(&name, msg))?;
+        Ok(HttpResponse::Ok().json(Flag { name, value }))
     }
 
     #[options("/")]
