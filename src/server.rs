@@ -123,7 +123,7 @@ mod flags {
         let keys: Vec<String> = conn.keys("flags:*")?;
         let flag_map = keys
             .iter()
-            .map(|key| -> Result<Flag> {
+            .map(|key| {
                 let value = conn
                     .get::<_, String>(key)?
                     .as_str()

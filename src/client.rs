@@ -105,7 +105,7 @@ pub fn App(cx: Scope) -> impl IntoView {
     let (new_flag, set_new_flag) = create_signal(cx, false);
 
     create_effect(cx, move |_| {
-        flags.with(cx, |flags| log!("flags={:#?}", flags))
+        flags.with(cx, |flags| log!("flags={flags:#?}"))
     });
     let save_flag = async move |flag| {
         post_json("http://localhost:8080/flags/", flag).await?;
